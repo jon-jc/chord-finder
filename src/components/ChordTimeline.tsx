@@ -2,15 +2,23 @@
 
 import { useEffect, useRef } from "react";
 import type { ChordSegment } from "../lib/analysis/types";
+import type { KeyEstimate } from "../lib/theory/key";
+import { romanNumeral } from "../lib/theory/roman";
 import { chordColor, formatTime } from "../lib/ui/colors";
 
 interface ChordTimelineProps {
   segments: ChordSegment[];
   currentTime: number;
   onSeek: (time: number) => void;
+  keyEstimate?: KeyEstimate;
 }
 
-export function ChordTimeline({ segments, currentTime, onSeek }: ChordTimelineProps) {
+export function ChordTimeline({
+  segments,
+  currentTime,
+  onSeek,
+  keyEstimate,
+}: ChordTimelineProps) {
   const activeIndex = segments.findIndex(
     (s) => currentTime >= s.startTime && currentTime < s.endTime
   );
@@ -48,6 +56,14 @@ export function ChordTimeline({ segments, currentTime, onSeek }: ChordTimelinePr
               {isNoChord ? "·" : seg.name}
             </span>
             <span className="mt-0.5 text-[10px] tabular-nums text-slate-500">
+              {!isNoChord && keyEstimate ? (
+                <>
+                  <span className="font-medium text-slate-400">
+                    {romanNumeral(seg.chordId, keyEstimate)}
+                  </span>
+                  {" · "}
+                </>
+              ) : null}
               {formatTime(seg.startTime)}
             </span>
           </button>
