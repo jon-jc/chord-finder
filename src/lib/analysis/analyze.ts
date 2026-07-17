@@ -11,6 +11,7 @@ import {
 } from "../theory/chords";
 import { viterbiDecode } from "../theory/viterbi";
 import { detectKey } from "../theory/key";
+import { transcribeNotes } from "./transcribe";
 import type { AnalysisResult, ChordSegment } from "./types";
 
 export interface AnalyzeOptions {
@@ -45,7 +46,7 @@ export function analyzeAudio(
   onProgress?.(0.05);
   const chromagram = computeChromagram(signal, sampleRate);
   const { frames, hopSeconds, tuningCents } = chromagram;
-  onProgress?.(0.55);
+  onProgress?.(0.4);
 
   let maxRms = 0;
   for (const frame of frames) maxRms = Math.max(maxRms, frame.rms);
@@ -56,10 +57,10 @@ export function analyzeAudio(
   const frameScores: Float32Array[] = frames.map((frame) =>
     scoreFrame(frame.rms < silenceGate ? zeroChroma : frame.chroma)
   );
-  onProgress?.(0.7);
+  onProgress?.(0.5);
 
   const path = viterbiDecode(frameScores, { selfTransition, emissionPower });
-  onProgress?.(0.85);
+  onProgress?.(0.55);
 
   // Key: energy-weighted aggregate chroma over non-silent frames.
   const aggregate = new Float64Array(12);
@@ -78,11 +79,18 @@ export function analyzeAudio(
     minSegmentSeconds,
     key.preferFlats
   );
+  onProgress?.(0.6);
+
+  const transcription = transcribeNotes(signal, sampleRate, {
+    tuningCents,
+    onProgress: (fraction) => onProgress?.(0.6 + 0.4 * fraction),
+  });
   onProgress?.(1);
 
   return {
     key,
     chords: segments,
+    transcription,
     chromagram: frames.map((f) => f.chroma),
     chromaTimes: Float32Array.from(frames, (f) => f.time),
     tuningCents,

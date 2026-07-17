@@ -1,4 +1,5 @@
 import type { KeyEstimate } from "../theory/key";
+import type { Transcription } from "./transcribe";
 
 export interface ChordSegment {
   /** Chord id into CHORDS, or NO_CHORD_ID. */
@@ -14,6 +15,7 @@ export interface ChordSegment {
 export interface AnalysisResult {
   key: KeyEstimate;
   chords: ChordSegment[];
+  transcription: Transcription;
   /** Downsampled chromagram for visualization: frames x 12. */
   chromagram: Float32Array[];
   chromaTimes: Float32Array;
