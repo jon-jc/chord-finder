@@ -10,6 +10,13 @@
 export interface ViterbiOptions {
   /** Probability of remaining in the same state between frames. */
   selfTransition?: number;
+  /**
+   * Exponent applied to emission scores (inverse softmax temperature).
+   * Raw template scores are cosine similarities that only differ by a few
+   * percent between candidates; sharpening them lets genuine chord changes
+   * overcome the transition penalty within a few frames.
+   */
+  emissionPower?: number;
 }
 
 /**
@@ -23,7 +30,8 @@ export function viterbiDecode(
   const frameCount = frameScores.length;
   if (frameCount === 0) return new Int32Array(0);
   const stateCount = frameScores[0].length;
-  const selfTransition = options.selfTransition ?? 0.9;
+  const selfTransition = options.selfTransition ?? 0.85;
+  const emissionPower = options.emissionPower ?? 10;
 
   const logSelf = Math.log(selfTransition);
   const logSwitch = Math.log((1 - selfTransition) / (stateCount - 1));
@@ -33,7 +41,7 @@ export function viterbiDecode(
   let current = new Float64Array(stateCount);
 
   const emission = (frame: Float32Array, state: number): number =>
-    Math.log(frame[state] + 1e-6);
+    emissionPower * Math.log(frame[state] + 1e-6);
 
   for (let s = 0; s < stateCount; s++) {
     previous[s] = emission(frameScores[0], s);

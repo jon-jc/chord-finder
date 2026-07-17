@@ -20,6 +20,8 @@ export interface AnalyzeOptions {
   minSegmentSeconds?: number;
   /** Viterbi self-transition probability. */
   selfTransition?: number;
+  /** Viterbi emission sharpening exponent. */
+  emissionPower?: number;
   onProgress?: (fraction: number) => void;
 }
 
@@ -35,7 +37,8 @@ export function analyzeAudio(
   const {
     silenceRatio = 0.03,
     minSegmentSeconds = 0.3,
-    selfTransition = 0.9,
+    selfTransition = 0.85,
+    emissionPower = 10,
     onProgress,
   } = options;
 
@@ -55,7 +58,7 @@ export function analyzeAudio(
   );
   onProgress?.(0.7);
 
-  const path = viterbiDecode(frameScores, { selfTransition });
+  const path = viterbiDecode(frameScores, { selfTransition, emissionPower });
   onProgress?.(0.85);
 
   // Key: energy-weighted aggregate chroma over non-silent frames.
