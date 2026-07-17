@@ -1,6 +1,8 @@
 /**
- * Onset detection via spectral flux, plus tempo estimation from the
- * autocorrelation of the flux envelope.
+ * Onset detection via superflux-style spectral flux (log-magnitude spectrum
+ * differenced against a max-filtered previous frame, which suppresses the
+ * false positives that vibrato/tremolo cause in plain flux), plus tempo
+ * estimation from the autocorrelation of the flux envelope.
  */
 
 import { magnitudeSpectrum } from "../dsp/fft";
@@ -32,6 +34,7 @@ export function detectOnsets(
 
   const windowed = new Float32Array(FRAME_SIZE);
   const energy = new Float32Array(frameCount);
+  const maxFilterRadius = 2; // bins; tolerates small pitch drift (vibrato)
   let previous: Float32Array | null = null;
 
   for (let f = 0; f < frameCount; f++) {
@@ -43,15 +46,25 @@ export function detectOnsets(
     for (let i = 0; i < spectrum.length; i++) total += spectrum[i];
     energy[f] = total;
 
+    // Log-compress so quiet-register attacks register alongside loud bass.
+    const logSpec = new Float32Array(spectrum.length);
+    for (let i = 0; i < spectrum.length; i++) logSpec[i] = Math.log1p(spectrum[i]);
+
     if (previous) {
       let sum = 0;
-      for (let i = 0; i < spectrum.length; i++) {
-        const diff = spectrum[i] - previous[i];
+      for (let i = 0; i < logSpec.length; i++) {
+        let prevMax = 0;
+        const from = Math.max(0, i - maxFilterRadius);
+        const to = Math.min(previous.length - 1, i + maxFilterRadius);
+        for (let j = from; j <= to; j++) {
+          if (previous[j] > prevMax) prevMax = previous[j];
+        }
+        const diff = logSpec[i] - prevMax;
         if (diff > 0) sum += diff;
       }
       flux[f] = sum;
     }
-    previous = spectrum;
+    previous = logSpec;
   }
 
   // Normalize flux to its 95th percentile so thresholds are level-invariant.

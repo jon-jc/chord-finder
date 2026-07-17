@@ -1,16 +1,24 @@
 "use client";
 
-import type { KeyEstimate } from "../lib/theory/key";
-import { pitchClassColor } from "../lib/ui/colors";
+import type { KeyEstimate, KeySpan } from "../lib/theory/key";
+import { formatTime, pitchClassColor } from "../lib/ui/colors";
 
 interface KeyCardProps {
   keyEstimate: KeyEstimate;
+  keyTimeline?: KeySpan[];
   tuningCents: number;
   duration: number;
   chordCount: number;
 }
 
-export function KeyCard({ keyEstimate, tuningCents, duration, chordCount }: KeyCardProps) {
+export function KeyCard({
+  keyEstimate,
+  keyTimeline,
+  tuningCents,
+  duration,
+  chordCount,
+}: KeyCardProps) {
+  const modulates = (keyTimeline?.length ?? 0) > 1;
   const confidencePct = Math.max(
     0,
     Math.min(100, Math.round(keyEstimate.confidence * 400))
@@ -28,6 +36,22 @@ export function KeyCard({ keyEstimate, tuningCents, duration, chordCount }: KeyC
         >
           {keyEstimate.name}
         </p>
+        {modulates && keyTimeline && (
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 text-xs text-slate-400">
+            <span className="rounded bg-fuchsia-500/15 px-1.5 py-0.5 font-medium text-fuchsia-300">
+              modulates
+            </span>
+            {keyTimeline.map((span, i) => (
+              <span key={span.startTime}>
+                {i > 0 && <span className="text-slate-600"> → </span>}
+                <span style={{ color: pitchClassColor(span.tonic) }}>
+                  {span.name}
+                </span>
+                <span className="text-slate-600"> @{formatTime(span.startTime)}</span>
+              </span>
+            ))}
+          </p>
+        )}
       </div>
 
       <div className="min-w-36">

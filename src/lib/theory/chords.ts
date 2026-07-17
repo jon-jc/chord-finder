@@ -32,6 +32,8 @@ export const CHORD_QUALITIES: ChordQuality[] = [
   { suffix: "aug", intervals: [0, 4, 8], prior: 0.3 },
   { suffix: "6", intervals: [0, 4, 7, 9], prior: 0.5 },
   { suffix: "m6", intervals: [0, 3, 7, 9], prior: 0.4 },
+  { suffix: "5", intervals: [0, 7], prior: 0.55 }, // power chord
+  { suffix: "add9", intervals: [0, 2, 4, 7], prior: 0.45 },
 ];
 
 export interface ChordDef {
@@ -102,9 +104,14 @@ export function chordNameById(id: number, preferFlats = false): string {
 /**
  * Score every chord template against one chroma frame (cosine similarity —
  * both sides are L2-normalized, so this is a plain dot product) scaled by
- * the chord's prior.
+ * the chord's prior and, when a bass chroma is available, by how well the
+ * bass register supports the chord's root.
  */
-export function scoreFrame(chroma: Float32Array, out?: Float32Array): Float32Array {
+export function scoreFrame(
+  chroma: Float32Array,
+  bassChroma?: Float32Array,
+  out?: Float32Array
+): Float32Array {
   const scores = out ?? new Float32Array(CHORDS.length);
   let isSilent = true;
   for (let i = 0; i < 12; i++) {
@@ -113,6 +120,17 @@ export function scoreFrame(chroma: Float32Array, out?: Float32Array): Float32Arr
       break;
     }
   }
+
+  let hasBass = false;
+  if (bassChroma) {
+    for (let i = 0; i < 12; i++) {
+      if (bassChroma[i] !== 0) {
+        hasBass = true;
+        break;
+      }
+    }
+  }
+
   for (let c = 0; c < CHORDS.length; c++) {
     if (isSilent) {
       scores[c] = c === NO_CHORD_ID ? 1 : 0;
@@ -122,11 +140,114 @@ export function scoreFrame(chroma: Float32Array, out?: Float32Array): Float32Arr
       scores[c] = NO_CHORD_FLOOR;
       continue;
     }
-    const { template, quality } = CHORDS[c];
+    const { template, quality, root } = CHORDS[c];
     let dot = 0;
     for (let i = 0; i < 12; i++) dot += chroma[i] * template[i];
     const prior = quality ? quality.prior : 0;
-    scores[c] = Math.max(0, dot) * (0.9 + 0.1 * prior);
+    let score = Math.max(0, dot) * (0.9 + 0.1 * prior);
+
+    if (hasBass && bassChroma && quality) {
+      // Bass affinity: the bass note is usually the root, sometimes the
+      // fifth or third. A mismatched bass register argues against the root.
+      const third = quality.intervals.length > 1 ? quality.intervals[1] : 4;
+      const affinity =
+        bassChroma[root] +
+        0.55 * bassChroma[(root + 7) % 12] +
+        0.4 * bassChroma[(root + third) % 12];
+      score *= 0.88 + 0.12 * Math.min(1, affinity * 1.25);
+    }
+    scores[c] = score;
   }
   return scores;
+}
+
+// --- Key/diatonic helpers -------------------------------------------------
+
+const MAJOR_SCALE = new Set([0, 2, 4, 5, 7, 9, 11]);
+// Natural minor plus the harmonic-minor leading tone.
+const MINOR_SCALE = new Set([0, 2, 3, 5, 7, 8, 10, 11]);
+
+/** Fraction of the chord's tones that belong to the key's scale (0..1). */
+export function chordDiatonicity(
+  chordId: number,
+  tonic: number,
+  mode: "major" | "minor"
+): number {
+  const chord = CHORDS[chordId];
+  if (!chord.quality || chord.root < 0) return 1;
+  const scale = mode === "major" ? MAJOR_SCALE : MINOR_SCALE;
+  let inScale = 0;
+  for (const interval of chord.quality.intervals) {
+    const pc = (((chord.root + interval - tonic) % 12) + 12) % 12;
+    if (scale.has(pc)) inScale++;
+  }
+  return inScale / chord.quality.intervals.length;
+}
+
+// --- Slash chords ----------------------------------------------------------
+
+/**
+ * Name a chord given the sounding bass pitch class: "C/E" when the bass is
+ * a chord tone other than the root, plain name otherwise.
+ */
+export function chordNameWithBass(
+  chordId: number,
+  bassPc: number | undefined,
+  preferFlats = false
+): string {
+  const chord = CHORDS[chordId];
+  const base = chordName(chord, preferFlats);
+  if (
+    bassPc === undefined ||
+    !chord.quality ||
+    chord.root < 0 ||
+    bassPc === chord.root
+  ) {
+    return base;
+  }
+  const interval = ((bassPc - chord.root) % 12 + 12) % 12;
+  if (!chord.quality.intervals.includes(interval)) return base;
+  return `${base}/${pitchClassName(bassPc, preferFlats)}`;
+}
+
+// --- Transition model -------------------------------------------------------
+
+/**
+ * Log-probability transition matrix over all chord states for Viterbi
+ * decoding. Switching cost depends on the root motion's interval class —
+ * fourths/fifths and relative-third moves are common, tritones are rare —
+ * which mirrors how progressions actually move.
+ */
+export function buildChordTransitions(selfTransition = 0.85): Float64Array {
+  const stateCount = CHORDS.length;
+  // Interval-class weights for root motion 0..6 semitones.
+  const rootWeights = [1.3, 0.5, 1.0, 1.2, 1.1, 1.5, 0.4];
+  const matrix = new Float64Array(stateCount * stateCount);
+
+  for (let from = 0; from < stateCount; from++) {
+    const weights = new Float64Array(stateCount);
+    let total = 0;
+    for (let to = 0; to < stateCount; to++) {
+      if (to === from) continue;
+      let w: number;
+      const a = CHORDS[from];
+      const b = CHORDS[to];
+      if (a.root < 0 || b.root < 0) {
+        w = 0.9; // entering/leaving no-chord
+      } else {
+        const interval = Math.abs(a.root - b.root) % 12;
+        const ic = Math.min(interval, 12 - interval);
+        w = rootWeights[ic];
+      }
+      weights[to] = w;
+      total += w;
+    }
+    const switchMass = 1 - selfTransition;
+    for (let to = 0; to < stateCount; to++) {
+      const p =
+        to === from ? selfTransition : (weights[to] / total) * switchMass;
+      matrix[from * stateCount + to] = Math.log(p + 1e-12);
+    }
+  }
+  return matrix;
 }

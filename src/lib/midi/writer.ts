@@ -137,9 +137,11 @@ export function buildMidiFile(
         events.push({ tick: startTick, data: [0x91, midi, velocity], order: 1 });
         events.push({ tick: endTick, data: [0x81, midi, 0], order: 0 });
       }
-      // Bass root an octave below.
-      events.push({ tick: startTick, data: [0x91, rootMidi - 12, velocity], order: 1 });
-      events.push({ tick: endTick, data: [0x81, rootMidi - 12, 0], order: 0 });
+      // Bass note an octave below: the sounding bass (inversions) or root.
+      const bassPc = segment.bassPc ?? chord.root;
+      const bassMidi = 36 + bassPc; // C2..B2
+      events.push({ tick: startTick, data: [0x91, bassMidi, velocity], order: 1 });
+      events.push({ tick: endTick, data: [0x81, bassMidi, 0], order: 0 });
     }
     events.sort((a, b) => a.tick - b.tick || a.order - b.order);
     for (const e of events) track.event(e.tick, e.data);

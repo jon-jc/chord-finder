@@ -50,3 +50,12 @@ export function chordMidiNotes(rootPc: number, intervals: number[]): number[] {
   const rootMidi = 48 + rootPc; // C3 = 48
   return intervals.map((iv) => rootMidi + iv);
 }
+
+/** Add white noise to a signal at the given linear amplitude. */
+export function addNoise(signal: Float32Array, amplitude: number): Float32Array {
+  const out = new Float32Array(signal.length);
+  for (let i = 0; i < signal.length; i++) {
+    out[i] = signal[i] + (Math.random() * 2 - 1) * amplitude;
+  }
+  return out;
+}
