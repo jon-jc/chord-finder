@@ -2,7 +2,8 @@
 
 /**
  * The main file-analysis experience: upload, analyze in a worker, then
- * explore the results with synced playback.
+ * explore the results with synced playback. The user chooses which outputs
+ * they want (chord chart / guitar tabs / MIDI).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import { mapToFretboard } from "../lib/tabs/fretboard";
 import { renderAsciiTab } from "../lib/tabs/ascii";
 import { buildMidiFile } from "../lib/midi/writer";
 import { FileDrop } from "./FileDrop";
+import { OutputToggles, useOutputPrefs } from "./OutputToggles";
 import { TabSheet } from "./TabSheet";
 import { Waveform } from "./Waveform";
 import { ChordTimeline } from "./ChordTimeline";
@@ -20,11 +22,28 @@ import { ChromagramView } from "./ChromagramView";
 import { CurrentChord } from "./CurrentChord";
 import { formatTime } from "../lib/ui/colors";
 
-export function AnalyzerApp() {
+interface AnalyzerAppProps {
+  /** Increment to load the bundled demo clip. */
+  demoNonce?: number;
+}
+
+export function AnalyzerApp({ demoNonce = 0 }: AnalyzerAppProps) {
   const { state, analyze, reset } = useAnalyzer();
+  const { prefs, toggle } = useOutputPrefs();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+
+  const loadDemo = useCallback(async () => {
+    const response = await fetch("demo.wav"); // relative: works under a base path
+    const blob = await response.blob();
+    void analyze(new File([blob], "demo-progression.wav", { type: "audio/wav" }));
+  }, [analyze]);
+
+  useEffect(() => {
+    if (demoNonce > 0) void loadDemo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demoNonce]);
 
   // Coarse (~100ms) time updates for chord highlighting; the waveform
   // playhead animates at 60fps on its own canvas.
@@ -55,7 +74,7 @@ export function AnalyzerApp() {
   const segments = result?.chords ?? [];
 
   const tabLayout = useMemo(() => {
-    if (!result) return null;
+    if (!result || !prefs.tabs) return null;
     const columns = mapToFretboard(result.transcription.notes);
     if (columns.length === 0) return null;
     return layoutTab(
@@ -64,7 +83,7 @@ export function AnalyzerApp() {
       result.transcription.tempoBpm,
       result.duration
     );
-  }, [result]);
+  }, [result, prefs.tabs]);
 
   const download = useCallback((data: BlobPart, mime: string, name: string) => {
     const blob = new Blob([data], { type: mime });
@@ -89,6 +108,7 @@ export function AnalyzerApp() {
     const bytes = buildMidiFile(result, { title: baseName });
     download(bytes.buffer as ArrayBuffer, "audio/midi", `${baseName}.mid`);
   }, [result, baseName, download]);
+
   const activeIndex = segments.findIndex(
     (s) => currentTime >= s.startTime && currentTime < s.endTime
   );
@@ -101,23 +121,27 @@ export function AnalyzerApp() {
   return (
     <div className="w-full">
       {state.phase === "idle" && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-5">
           <FileDrop onFile={analyze} />
-          <button
-            onClick={async () => {
-              const response = await fetch("/demo.wav");
-              const blob = await response.blob();
-              void analyze(new File([blob], "demo-progression.wav", { type: "audio/wav" }));
-            }}
-            className="self-center rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
-          >
-            No file handy? Try the demo clip →
-          </button>
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">
+                What do you want out of it?
+              </p>
+              <OutputToggles prefs={prefs} onToggle={toggle} />
+            </div>
+            <button
+              onClick={() => void loadDemo()}
+              className="self-center rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200"
+            >
+              No file handy? Try the demo clip →
+            </button>
+          </div>
         </div>
       )}
 
       {(state.phase === "decoding" || state.phase === "analyzing") && (
-        <div className="flex flex-col items-center rounded-2xl border border-white/5 bg-slate-900/60 px-8 py-16">
+        <div className="animate-fade-up flex flex-col items-center rounded-2xl border border-white/5 bg-slate-900/60 px-8 py-16">
           <p className="text-lg font-medium text-slate-200">
             {state.phase === "decoding" ? "Decoding" : "Listening for chords"}
             <span className="text-slate-500"> · {state.fileName}</span>
@@ -156,32 +180,40 @@ export function AnalyzerApp() {
             onEnded={() => setIsPlaying(false)}
           />
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="truncate text-sm text-slate-400">
-              <span className="font-medium text-slate-200">{state.fileName}</span>
-            </p>
+          <div
+            className="animate-fade-up flex flex-wrap items-center justify-between gap-3"
+            style={{ animationDelay: "0ms" }}
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="truncate text-sm font-medium text-slate-200">
+                {state.fileName}
+              </p>
+              <OutputToggles prefs={prefs} onToggle={toggle} compact />
+            </div>
             <div className="flex gap-2">
-              <button
-                onClick={downloadMidi}
-                className="flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/25"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
+              {prefs.midi && (
+                <button
+                  onClick={downloadMidi}
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-all hover:-translate-y-0.5 hover:bg-emerald-500/25"
                 >
-                  <path d="M12 3v13" />
-                  <path d="m7 12 5 5 5-5" />
-                  <path d="M5 21h14" />
-                </svg>
-                Download MIDI
-              </button>
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M12 3v13" />
+                    <path d="m7 12 5 5 5-5" />
+                    <path d="M5 21h14" />
+                  </svg>
+                  Download MIDI
+                </button>
+              )}
               <button
                 onClick={reset}
                 className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:bg-white/5"
@@ -191,19 +223,24 @@ export function AnalyzerApp() {
             </div>
           </div>
 
-          <KeyCard
-            keyEstimate={result.key}
-            tuningCents={result.tuningCents}
-            duration={result.duration}
-            chordCount={segments.filter((s) => s.name !== "N").length}
-          />
+          <div className="animate-fade-up" style={{ animationDelay: "60ms" }}>
+            <KeyCard
+              keyEstimate={result.key}
+              tuningCents={result.tuningCents}
+              duration={result.duration}
+              chordCount={segments.filter((s) => s.name !== "N").length}
+            />
+          </div>
 
-          <div className="flex flex-col gap-4 lg:flex-row">
+          <div
+            className="animate-fade-up flex flex-col gap-4 lg:flex-row"
+            style={{ animationDelay: "120ms" }}
+          >
             <div className="flex items-center gap-4 lg:flex-col">
               <button
                 onClick={togglePlay}
                 aria-label={isPlaying ? "Pause" : "Play"}
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-white shadow-lg shadow-indigo-500/25 transition-all hover:bg-indigo-400 hover:shadow-indigo-400/30"
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-white shadow-lg shadow-indigo-500/25 transition-all hover:scale-105 hover:bg-indigo-400 hover:shadow-indigo-400/30"
               >
                 {isPlaying ? (
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -234,20 +271,22 @@ export function AnalyzerApp() {
             <CurrentChord segment={activeSegment} nextSegment={nextSegment} />
           </div>
 
-          <section>
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">
-              Chord progression
-            </h3>
-            <ChordTimeline
-              segments={segments}
-              currentTime={currentTime}
-              onSeek={seek}
-              keyEstimate={result.key}
-            />
-          </section>
+          {prefs.chords && (
+            <section className="animate-fade-up" style={{ animationDelay: "180ms" }}>
+              <h3 className="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">
+                Chord progression
+              </h3>
+              <ChordTimeline
+                segments={segments}
+                currentTime={currentTime}
+                onSeek={seek}
+                keyEstimate={result.key}
+              />
+            </section>
+          )}
 
-          {tabLayout && (
-            <section>
+          {prefs.tabs && tabLayout && (
+            <section className="animate-fade-up" style={{ animationDelay: "240ms" }}>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs font-medium uppercase tracking-widest text-slate-500">
                   Guitar tab{" "}
@@ -271,7 +310,14 @@ export function AnalyzerApp() {
             </section>
           )}
 
-          <section>
+          {!prefs.chords && !prefs.tabs && !prefs.midi && (
+            <p className="rounded-xl border border-white/5 bg-slate-900/40 px-5 py-4 text-sm text-slate-500">
+              All outputs are switched off — turn on a chip above to see the
+              chord chart, guitar tab, or MIDI export.
+            </p>
+          )}
+
+          <section className="animate-fade-up" style={{ animationDelay: "300ms" }}>
             <h3 className="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">
               Pitch-class energy (chromagram)
             </h3>
