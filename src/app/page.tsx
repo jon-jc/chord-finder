@@ -1,4 +1,4 @@
-import { AnalyzerApp } from "../components/AnalyzerApp";
+import { Studio } from "../components/Studio";
 
 export default function Home() {
   return (
@@ -47,7 +47,7 @@ export default function Home() {
         </p>
       </section>
 
-      <AnalyzerApp />
+      <Studio />
 
       <footer className="mt-16 border-t border-white/5 pt-6 text-center text-xs text-slate-600">
         Audio never leaves your device.
