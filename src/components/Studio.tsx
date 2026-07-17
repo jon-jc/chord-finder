@@ -13,8 +13,20 @@ const TABS: { id: Mode; label: string }[] = [
   { id: "live", label: "Live microphone" },
 ];
 
-export function Studio() {
+interface StudioProps {
+  /** Increment to load the bundled demo clip in the file analyzer. */
+  demoNonce?: number;
+}
+
+export function Studio({ demoNonce = 0 }: StudioProps) {
   const [mode, setMode] = useState<Mode>("file");
+
+  // A new demo request always lands on the file tab (adjust-during-render).
+  const [seenNonce, setSeenNonce] = useState(demoNonce);
+  if (demoNonce !== seenNonce) {
+    setSeenNonce(demoNonce);
+    setMode("file");
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -42,7 +54,7 @@ export function Studio() {
 
       {/* Keep the file analyzer mounted so switching tabs doesn't lose results. */}
       <div className={mode === "file" ? "" : "hidden"}>
-        <AnalyzerApp />
+        <AnalyzerApp demoNonce={demoNonce} />
       </div>
       {mode === "live" && <LiveMode />}
     </div>
