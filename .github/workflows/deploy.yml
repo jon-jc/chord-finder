@@ -2,15 +2,13 @@
 #
 # Requires Pages to be enabled for the repository (Settings -> Pages ->
 # Source: GitHub Actions). On a personal account the repo must be public.
-# Runs automatically after a push to main once Pages is enabled, or can be
-# triggered manually from the Actions tab.
+# Trigger manually from the Actions tab once Pages is enabled; to deploy on
+# every push afterwards, add a `push: {branches: [main]}` trigger below.
 
 name: Deploy
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
