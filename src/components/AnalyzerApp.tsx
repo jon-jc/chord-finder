@@ -5,9 +5,13 @@
  * explore the results with synced playback.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnalyzer } from "../hooks/useAnalyzer";
+import { layoutTab } from "../lib/tabs/layout";
+import { mapToFretboard } from "../lib/tabs/fretboard";
+import { renderAsciiTab } from "../lib/tabs/ascii";
 import { FileDrop } from "./FileDrop";
+import { TabSheet } from "./TabSheet";
 import { Waveform } from "./Waveform";
 import { ChordTimeline } from "./ChordTimeline";
 import { KeyCard } from "./KeyCard";
@@ -48,6 +52,30 @@ export function AnalyzerApp() {
 
   const { result } = state;
   const segments = result?.chords ?? [];
+
+  const tabLayout = useMemo(() => {
+    if (!result) return null;
+    const columns = mapToFretboard(result.transcription.notes);
+    if (columns.length === 0) return null;
+    return layoutTab(
+      columns,
+      result.chords,
+      result.transcription.tempoBpm,
+      result.duration
+    );
+  }, [result]);
+
+  const downloadAsciiTab = useCallback(() => {
+    if (!tabLayout) return;
+    const text = renderAsciiTab(tabLayout, state.fileName ?? "Transcription");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${(state.fileName ?? "tab").replace(/\.[^.]+$/, "")}-tab.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [tabLayout, state.fileName]);
   const activeIndex = segments.findIndex(
     (s) => currentTime >= s.startTime && currentTime < s.endTime
   );
@@ -180,6 +208,31 @@ export function AnalyzerApp() {
               onSeek={seek}
             />
           </section>
+
+          {tabLayout && (
+            <section>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-medium uppercase tracking-widest text-slate-500">
+                  Guitar tab{" "}
+                  <span className="normal-case tracking-normal text-slate-600">
+                    · ~{Math.round(tabLayout.tempoBpm)} BPM ·{" "}
+                    {result.transcription.notes.length} notes · standard tuning
+                  </span>
+                </h3>
+                <button
+                  onClick={downloadAsciiTab}
+                  className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5"
+                >
+                  Download .txt tab
+                </button>
+              </div>
+              <TabSheet
+                layout={tabLayout}
+                currentTime={currentTime}
+                onSeek={seek}
+              />
+            </section>
+          )}
 
           <section>
             <h3 className="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">
