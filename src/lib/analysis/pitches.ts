@@ -58,8 +58,13 @@ function bandMax(
 }
 
 /**
- * Estimate the notes sounding in `segment` (mono PCM). Uses the attack
- * portion, where harmonics are strongest.
+ * Estimate the notes sounding in `segment` (mono PCM).
+ *
+ * Analyzes the attack portion (strongest harmonics) and — when the segment
+ * is long enough — a second window from the sustain, averaging the two
+ * normalized spectra. Attack transients (pick noise, hammer thump) are
+ * broadband and incoherent between the windows, so they wash out, while
+ * true partials reinforce.
  */
 export function estimatePitches(
   segment: Float32Array,
@@ -75,6 +80,25 @@ export function estimatePitches(
   applyHann(segment.subarray(0, size), windowed);
   const spectrum = magnitudeSpectrum(windowed);
   const binHz = sampleRate / size;
+
+  if (segment.length >= size + size / 2) {
+    // Second window from the sustain portion, blended 60/40.
+    const offset = Math.min(segment.length - size, Math.floor(size / 2));
+    applyHann(segment.subarray(offset, offset + size), windowed);
+    const sustain = magnitudeSpectrum(windowed);
+    let maxAttack = 0;
+    let maxSustain = 0;
+    for (let i = 0; i < spectrum.length; i++) {
+      if (spectrum[i] > maxAttack) maxAttack = spectrum[i];
+      if (sustain[i] > maxSustain) maxSustain = sustain[i];
+    }
+    if (maxAttack > 0 && maxSustain > 0) {
+      for (let i = 0; i < spectrum.length; i++) {
+        spectrum[i] =
+          (0.6 * spectrum[i]) / maxAttack + (0.4 * sustain[i]) / maxSustain;
+      }
+    }
+  }
 
   let maxMag = 0;
   for (let i = 0; i < spectrum.length; i++) {
@@ -102,12 +126,17 @@ export function estimatePitches(
       if (fundamental.value < fundamentalGate) continue;
 
       let salience = 0;
+      let presentEarly = 0;
       for (let h = 1; h <= opts.harmonics; h++) {
         const freq = f0 * h;
         if (freq > sampleRate / 2) break;
         const band = bandMax(working, binHz, freq, 35);
+        if (h <= 3 && band.value > fundamentalGate) presentEarly++;
         salience += Math.pow(opts.harmonicDecay, h - 1) * band.value;
       }
+      // A real note shows at least two of its first three partials; a lone
+      // spectral peak (noise, residue of a subtracted note) does not.
+      if (presentEarly < 2) continue;
       if (salience > bestSalience) {
         bestSalience = salience;
         bestMidi = midi;

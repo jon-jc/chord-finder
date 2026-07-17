@@ -1,11 +1,13 @@
-import type { KeyEstimate } from "../theory/key";
+import type { KeyEstimate, KeySpan } from "../theory/key";
 import type { Transcription } from "./transcribe";
 
 export interface ChordSegment {
   /** Chord id into CHORDS, or NO_CHORD_ID. */
   chordId: number;
-  /** Display name, spelled for the detected key (e.g. "Bb", "F#m7"). */
+  /** Display name, spelled for the detected key (e.g. "Bb", "F#m7/A"). */
   name: string;
+  /** Sounding bass pitch class (equals the root unless inverted). */
+  bassPc?: number;
   startTime: number;
   endTime: number;
   /** Mean per-frame template score over the segment, in [0, 1]. */
@@ -14,6 +16,8 @@ export interface ChordSegment {
 
 export interface AnalysisResult {
   key: KeyEstimate;
+  /** Local keys over time; more than one entry means the piece modulates. */
+  keyTimeline: KeySpan[];
   chords: ChordSegment[];
   transcription: Transcription;
   /** Downsampled chromagram for visualization: frames x 12. */

@@ -95,3 +95,72 @@ export function viterbiDecode(
   }
   return path;
 }
+
+/**
+ * Viterbi decode with a full (stateCount x stateCount) log-probability
+ * transition matrix, for musically-informed transitions where switch cost
+ * depends on which chords are involved. O(T * S^2) but S is small enough
+ * (~170 states) that multi-minute audio decodes in well under a second.
+ */
+export function viterbiDecodeFull(
+  frameScores: Float32Array[],
+  logTransition: Float64Array,
+  options: Pick<ViterbiOptions, "emissionPower"> = {}
+): Int32Array {
+  const frameCount = frameScores.length;
+  if (frameCount === 0) return new Int32Array(0);
+  const stateCount = frameScores[0].length;
+  if (logTransition.length !== stateCount * stateCount) {
+    throw new Error(
+      `transition matrix size ${logTransition.length} != ${stateCount}^2`
+    );
+  }
+  const emissionPower = options.emissionPower ?? 10;
+
+  const backPointers = new Int32Array(frameCount * stateCount);
+  let previous = new Float64Array(stateCount);
+  let current = new Float64Array(stateCount);
+
+  const emission = (frame: Float32Array, state: number): number =>
+    emissionPower * Math.log(frame[state] + 1e-6);
+
+  for (let s = 0; s < stateCount; s++) {
+    previous[s] = emission(frameScores[0], s);
+  }
+
+  for (let t = 1; t < frameCount; t++) {
+    const frame = frameScores[t];
+    for (let s = 0; s < stateCount; s++) {
+      let bestScore = -Infinity;
+      let bestPrev = 0;
+      for (let p = 0; p < stateCount; p++) {
+        const score = previous[p] + logTransition[p * stateCount + s];
+        if (score > bestScore) {
+          bestScore = score;
+          bestPrev = p;
+        }
+      }
+      current[s] = bestScore + emission(frame, s);
+      backPointers[t * stateCount + s] = bestPrev;
+    }
+    const swap = previous;
+    previous = current;
+    current = swap;
+  }
+
+  let bestState = 0;
+  let bestFinal = -Infinity;
+  for (let s = 0; s < stateCount; s++) {
+    if (previous[s] > bestFinal) {
+      bestFinal = previous[s];
+      bestState = s;
+    }
+  }
+
+  const path = new Int32Array(frameCount);
+  path[frameCount - 1] = bestState;
+  for (let t = frameCount - 1; t > 0; t--) {
+    path[t - 1] = backPointers[t * stateCount + path[t]];
+  }
+  return path;
+}

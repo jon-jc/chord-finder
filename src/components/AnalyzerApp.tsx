@@ -226,6 +226,7 @@ export function AnalyzerApp({ demoNonce = 0 }: AnalyzerAppProps) {
           <div className="animate-fade-up" style={{ animationDelay: "60ms" }}>
             <KeyCard
               keyEstimate={result.key}
+              keyTimeline={result.keyTimeline}
               tuningCents={result.tuningCents}
               duration={result.duration}
               chordCount={segments.filter((s) => s.name !== "N").length}

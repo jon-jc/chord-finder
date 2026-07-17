@@ -21,6 +21,11 @@ import { freqToMidi } from "../theory/notes";
 export interface ChromaFrame {
   /** 12 pitch-class energies, L2-normalized (all zeros for silent frames). */
   chroma: Float32Array;
+  /**
+   * Pitch-class energies of the bass register only (below ~C4),
+   * L2-normalized. Used for root/inversion disambiguation.
+   */
+  bassChroma: Float32Array;
   /** RMS of the raw frame, used for silence gating. */
   rms: number;
   /** Frame start time in seconds. */
@@ -42,6 +47,13 @@ export interface ChromaOptions {
   maxFreq?: number;
   /** Exponent applied to peak magnitudes (dynamic-range compression). */
   peakCompression?: number;
+  /** Upper limit of the bass register used for bassChroma. */
+  bassSplitFreq?: number;
+  /**
+   * Temporal smoothing radius in frames (moving average over 2r+1 frames).
+   * 0 disables. Softens transients/percussion without smearing changes.
+   */
+  smoothingRadius?: number;
 }
 
 interface SpectralPeak {
@@ -55,6 +67,8 @@ const DEFAULTS: Required<ChromaOptions> = {
   minFreq: 55, // A1
   maxFreq: 2200,
   peakCompression: 0.5,
+  bassSplitFreq: 262, // ~C4
+  smoothingRadius: 1,
 };
 
 /**
@@ -125,7 +139,15 @@ export function computeChromagram(
   options: ChromaOptions = {}
 ): ChromagramResult {
   const opts = { ...DEFAULTS, ...options };
-  const { frameSize, hopSize, minFreq, maxFreq, peakCompression } = opts;
+  const {
+    frameSize,
+    hopSize,
+    minFreq,
+    maxFreq,
+    peakCompression,
+    bassSplitFreq,
+    smoothingRadius,
+  } = opts;
 
   const frameCount = Math.max(0, Math.floor((signal.length - frameSize) / hopSize) + 1);
   const windowed = new Float32Array(frameSize);
@@ -154,9 +176,11 @@ export function computeChromagram(
 
   const tuningCents = estimateTuning(peaksPerFrame);
 
-  const frames: ChromaFrame[] = [];
+  const rawChroma: Float32Array[] = [];
+  const rawBass: Float32Array[] = [];
   for (let f = 0; f < frameCount; f++) {
     const chroma = new Float32Array(12);
+    const bass = new Float32Array(12);
     for (const peak of peaksPerFrame[f]) {
       const midi = freqToMidi(peak.freq, tuningCents);
       const nearest = Math.round(midi);
@@ -164,19 +188,24 @@ export function computeChromagram(
       if (centsOff > 0.35) continue; // reject inharmonic/ambiguous peaks
       const pc = ((nearest % 12) + 12) % 12;
       const proximity = 1 - centsOff / 0.5;
-      chroma[pc] += Math.pow(peak.magnitude, peakCompression) * proximity;
+      const value = Math.pow(peak.magnitude, peakCompression) * proximity;
+      chroma[pc] += value;
+      if (peak.freq < bassSplitFreq) bass[pc] += value;
     }
+    rawChroma.push(chroma);
+    rawBass.push(bass);
+  }
 
-    // L2 normalize.
-    let norm = 0;
-    for (let i = 0; i < 12; i++) norm += chroma[i] * chroma[i];
-    if (norm > 0) {
-      norm = Math.sqrt(norm);
-      for (let i = 0; i < 12; i++) chroma[i] /= norm;
-    }
+  // Temporal smoothing (moving average) before normalization, so brief
+  // percussive transients don't hijack single frames.
+  const smoothedChroma = smoothFrames(rawChroma, smoothingRadius);
+  const smoothedBass = smoothFrames(rawBass, smoothingRadius);
 
+  const frames: ChromaFrame[] = [];
+  for (let f = 0; f < frameCount; f++) {
     frames.push({
-      chroma,
+      chroma: l2Normalize(smoothedChroma[f]),
+      bassChroma: l2Normalize(smoothedBass[f]),
       rms: rmsPerFrame[f],
       time: (f * hopSize) / sampleRate,
     });
@@ -188,4 +217,33 @@ export function computeChromagram(
     hopSeconds: hopSize / sampleRate,
     frameSeconds: frameSize / sampleRate,
   };
+}
+
+function smoothFrames(frames: Float32Array[], radius: number): Float32Array[] {
+  if (radius <= 0 || frames.length === 0) return frames;
+  const out: Float32Array[] = [];
+  for (let f = 0; f < frames.length; f++) {
+    const acc = new Float32Array(12);
+    const start = Math.max(0, f - radius);
+    const end = Math.min(frames.length - 1, f + radius);
+    for (let i = start; i <= end; i++) {
+      for (let pc = 0; pc < 12; pc++) acc[pc] += frames[i][pc];
+    }
+    const count = end - start + 1;
+    for (let pc = 0; pc < 12; pc++) acc[pc] /= count;
+    out.push(acc);
+  }
+  return out;
+}
+
+function l2Normalize(vector: Float32Array): Float32Array {
+  let norm = 0;
+  for (let i = 0; i < 12; i++) norm += vector[i] * vector[i];
+  if (norm > 0) {
+    norm = Math.sqrt(norm);
+    const out = new Float32Array(12);
+    for (let i = 0; i < 12; i++) out[i] = vector[i] / norm;
+    return out;
+  }
+  return vector;
 }

@@ -76,5 +76,35 @@ export function transcribeNotes(
     onProgress?.(0.25 + 0.75 * ((i + 1) / starts.length));
   }
 
-  return { notes, onsets, tempoBpm };
+  return { notes: mergeContinuations(notes), onsets, tempoBpm };
+}
+
+/**
+ * A note that keeps ringing across a neighbor's onset shows up again in the
+ * next segment at the same pitch but weaker (it is decaying). Merge such
+ * back-to-back detections into one longer note instead of re-striking it.
+ */
+function mergeContinuations(notes: NoteEvent[]): NoteEvent[] {
+  const byPitch = new Map<number, NoteEvent[]>();
+  const sorted = [...notes].sort((a, b) => a.startTime - b.startTime);
+  const out: NoteEvent[] = [];
+
+  for (const note of sorted) {
+    const previousOfPitch = byPitch.get(note.midi);
+    const last = previousOfPitch?.[previousOfPitch.length - 1];
+    if (
+      last &&
+      Math.abs(note.startTime - last.endTime) < 0.03 &&
+      note.velocity <= last.velocity * 0.75
+    ) {
+      last.endTime = note.endTime;
+      continue;
+    }
+    const copy = { ...note };
+    out.push(copy);
+    if (previousOfPitch) previousOfPitch.push(copy);
+    else byPitch.set(note.midi, [copy]);
+  }
+
+  return out.sort((a, b) => a.startTime - b.startTime || a.midi - b.midi);
 }
