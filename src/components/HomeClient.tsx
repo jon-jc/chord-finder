@@ -8,8 +8,8 @@ import { Studio } from "./Studio";
 
 const STEPS = [
   {
-    title: "Drop a track — or just play",
-    body: "Any format your browser can play, or live microphone input. Nothing is uploaded anywhere.",
+    title: "Drop a track, paste a link, or just play",
+    body: "Audio files, YouTube links (captured right in the tab), or live microphone input. Nothing is uploaded anywhere.",
   },
   {
     title: "The engine listens",

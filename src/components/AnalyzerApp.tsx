@@ -25,9 +25,11 @@ import { formatTime } from "../lib/ui/colors";
 interface AnalyzerAppProps {
   /** Increment to load the bundled demo clip. */
   demoNonce?: number;
+  /** Externally captured audio (e.g. YouTube tab capture) to analyze. */
+  externalFile?: { file: File; nonce: number } | null;
 }
 
-export function AnalyzerApp({ demoNonce = 0 }: AnalyzerAppProps) {
+export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppProps) {
   const { state, analyze, reset } = useAnalyzer();
   const { prefs, toggle } = useOutputPrefs();
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -44,6 +46,11 @@ export function AnalyzerApp({ demoNonce = 0 }: AnalyzerAppProps) {
     if (demoNonce > 0) void loadDemo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [demoNonce]);
+
+  useEffect(() => {
+    if (externalFile) void analyze(externalFile.file);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalFile?.nonce]);
 
   // Coarse (~100ms) time updates for chord highlighting; the waveform
   // playhead animates at 60fps on its own canvas.

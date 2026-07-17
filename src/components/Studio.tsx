@@ -1,15 +1,17 @@
 "use client";
 
-/** Mode switcher between file analysis and live microphone input. */
+/** Mode switcher: file analysis, YouTube capture, or live microphone. */
 
 import { useState } from "react";
 import { AnalyzerApp } from "./AnalyzerApp";
 import { LiveMode } from "./LiveMode";
+import { YouTubeMode } from "./YouTubeMode";
 
-type Mode = "file" | "live";
+type Mode = "file" | "youtube" | "live";
 
 const TABS: { id: Mode; label: string }[] = [
   { id: "file", label: "Analyze a file" },
+  { id: "youtube", label: "YouTube link" },
   { id: "live", label: "Live microphone" },
 ];
 
@@ -20,6 +22,9 @@ interface StudioProps {
 
 export function Studio({ demoNonce = 0 }: StudioProps) {
   const [mode, setMode] = useState<Mode>("file");
+  const [captured, setCaptured] = useState<{ file: File; nonce: number } | null>(
+    null
+  );
 
   // A new demo request always lands on the file tab (adjust-during-render).
   const [seenNonce, setSeenNonce] = useState(demoNonce);
@@ -54,8 +59,16 @@ export function Studio({ demoNonce = 0 }: StudioProps) {
 
       {/* Keep the file analyzer mounted so switching tabs doesn't lose results. */}
       <div className={mode === "file" ? "" : "hidden"}>
-        <AnalyzerApp demoNonce={demoNonce} />
+        <AnalyzerApp demoNonce={demoNonce} externalFile={captured} />
       </div>
+      {mode === "youtube" && (
+        <YouTubeMode
+          onCaptured={(file) => {
+            setCaptured((prev) => ({ file, nonce: (prev?.nonce ?? 0) + 1 }));
+            setMode("file");
+          }}
+        />
+      )}
       {mode === "live" && <LiveMode />}
     </div>
   );

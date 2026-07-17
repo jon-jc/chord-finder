@@ -41,6 +41,12 @@ const FEATURES = [
       <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 1 1-6 0V5a3 3 0 0 1 3-3ZM5 11v1a7 7 0 0 0 14 0v-1M12 19v3" />
     ),
   },
+  {
+    label: "YouTube links",
+    icon: (
+      <path d="M2.5 12c0-3.3 0-4.9.9-6a4 4 0 0 1 1.6-1.2C6.3 4.3 8 4.3 12 4.3s5.7 0 7 .5a4 4 0 0 1 1.6 1.2c.9 1.1.9 2.7.9 6s0 4.9-.9 6a4 4 0 0 1-1.6 1.2c-1.3.5-3 .5-7 .5s-5.7 0-7-.5a4 4 0 0 1-1.6-1.2c-.9-1.1-.9-2.7-.9-6ZM10 9l5 3-5 3V9Z" />
+    ),
+  },
 ];
 
 // Deterministic pseudo-random bar timing so SSR and client markup match.
