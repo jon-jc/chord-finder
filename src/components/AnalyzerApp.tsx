@@ -10,6 +10,7 @@ import { useAnalyzer } from "../hooks/useAnalyzer";
 import { layoutTab } from "../lib/tabs/layout";
 import { mapToFretboard } from "../lib/tabs/fretboard";
 import { renderAsciiTab } from "../lib/tabs/ascii";
+import { buildMidiFile } from "../lib/midi/writer";
 import { FileDrop } from "./FileDrop";
 import { TabSheet } from "./TabSheet";
 import { Waveform } from "./Waveform";
@@ -65,17 +66,29 @@ export function AnalyzerApp() {
     );
   }, [result]);
 
-  const downloadAsciiTab = useCallback(() => {
-    if (!tabLayout) return;
-    const text = renderAsciiTab(tabLayout, state.fileName ?? "Transcription");
-    const blob = new Blob([text], { type: "text/plain" });
+  const download = useCallback((data: BlobPart, mime: string, name: string) => {
+    const blob = new Blob([data], { type: mime });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${(state.fileName ?? "tab").replace(/\.[^.]+$/, "")}-tab.txt`;
+    anchor.download = name;
     anchor.click();
     URL.revokeObjectURL(url);
-  }, [tabLayout, state.fileName]);
+  }, []);
+
+  const baseName = (state.fileName ?? "chordlab").replace(/\.[^.]+$/, "");
+
+  const downloadAsciiTab = useCallback(() => {
+    if (!tabLayout) return;
+    const text = renderAsciiTab(tabLayout, state.fileName ?? "Transcription");
+    download(text, "text/plain", `${baseName}-tab.txt`);
+  }, [tabLayout, state.fileName, baseName, download]);
+
+  const downloadMidi = useCallback(() => {
+    if (!result) return;
+    const bytes = buildMidiFile(result, { title: baseName });
+    download(bytes.buffer as ArrayBuffer, "audio/midi", `${baseName}.mid`);
+  }, [result, baseName, download]);
   const activeIndex = segments.findIndex(
     (s) => currentTime >= s.startTime && currentTime < s.endTime
   );
@@ -147,12 +160,35 @@ export function AnalyzerApp() {
             <p className="truncate text-sm text-slate-400">
               <span className="font-medium text-slate-200">{state.fileName}</span>
             </p>
-            <button
-              onClick={reset}
-              className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:bg-white/5"
-            >
-              Analyze another file
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={downloadMidi}
+                className="flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-colors hover:bg-emerald-500/25"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M12 3v13" />
+                  <path d="m7 12 5 5 5-5" />
+                  <path d="M5 21h14" />
+                </svg>
+                Download MIDI
+              </button>
+              <button
+                onClick={reset}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:bg-white/5"
+              >
+                Analyze another file
+              </button>
+            </div>
           </div>
 
           <KeyCard
@@ -206,6 +242,7 @@ export function AnalyzerApp() {
               segments={segments}
               currentTime={currentTime}
               onSeek={seek}
+              keyEstimate={result.key}
             />
           </section>
 
