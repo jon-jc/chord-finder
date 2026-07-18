@@ -26,6 +26,7 @@ import {
 import { viterbiDecodeFull } from "../theory/viterbi";
 import { detectKey, detectKeyTimeline, keyIndex } from "../theory/key";
 import type { KeyEstimate } from "../theory/key";
+import { classifyArrangement } from "./arrangement";
 import { transcribeNotes } from "./transcribe";
 import type { AnalysisResult, ChordSegment } from "./types";
 
@@ -141,6 +142,8 @@ export function analyzeAudio(
   }
   onProgress?.(0.6);
 
+  const arrangement = classifyArrangement(signal, sampleRate);
+
   const transcription = transcribeNotes(signal, sampleRate, {
     tuningCents,
     chords: segments,
@@ -151,6 +154,7 @@ export function analyzeAudio(
   return {
     key,
     keyTimeline,
+    arrangement,
     chords: segments,
     transcription,
     chromagram: frames.map((f) => f.chroma),
