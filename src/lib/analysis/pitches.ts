@@ -22,6 +22,12 @@ export interface PitchOptions {
   /** Stop when the next candidate is weaker than this fraction of the first. */
   stopRatio?: number;
   tuningCents?: number;
+  /**
+   * Pitch classes of the chord sounding in this segment. Chord tones get a
+   * mild salience boost and non-chord tones a mild penalty, so borderline
+   * candidates resolve toward what the harmony says is plausible.
+   */
+  preferredPcs?: number[];
 }
 
 const DEFAULTS: Required<PitchOptions> = {
@@ -32,6 +38,7 @@ const DEFAULTS: Required<PitchOptions> = {
   harmonicDecay: 0.75,
   stopRatio: 0.22,
   tuningCents: 0,
+  preferredPcs: [],
 };
 
 /** Max spectrum magnitude within +-`cents` of `freq` (0 if out of range). */
@@ -137,6 +144,12 @@ export function estimatePitches(
       // A real note shows at least two of its first three partials; a lone
       // spectral peak (noise, residue of a subtracted note) does not.
       if (presentEarly < 2) continue;
+
+      if (opts.preferredPcs.length > 0) {
+        const pc = ((midi % 12) + 12) % 12;
+        salience *= opts.preferredPcs.includes(pc) ? 1.18 : 0.86;
+      }
+
       if (salience > bestSalience) {
         bestSalience = salience;
         bestMidi = midi;

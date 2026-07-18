@@ -143,6 +143,7 @@ export function analyzeAudio(
 
   const transcription = transcribeNotes(signal, sampleRate, {
     tuningCents,
+    chords: segments,
     onProgress: (fraction) => onProgress?.(0.6 + 0.4 * fraction),
   });
   onProgress?.(1);
