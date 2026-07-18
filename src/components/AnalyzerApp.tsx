@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnalyzer } from "../hooks/useAnalyzer";
+import { buildChordChart, renderChartText } from "../lib/chart";
 import { layoutTab } from "../lib/tabs/layout";
 import { mapToFretboard } from "../lib/tabs/fretboard";
 import { buildRhythmColumns } from "../lib/tabs/rhythm";
@@ -17,6 +18,7 @@ import { FileDrop } from "./FileDrop";
 import { OutputToggles, useOutputPrefs } from "./OutputToggles";
 import { TabSheet } from "./TabSheet";
 import { Waveform } from "./Waveform";
+import { ChordChart } from "./ChordChart";
 import { ChordTimeline } from "./ChordTimeline";
 import { KeyCard } from "./KeyCard";
 import { ChromagramView } from "./ChromagramView";
@@ -129,11 +131,22 @@ export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppP
 
   const baseName = (state.fileName ?? "chordlab").replace(/\.[^.]+$/, "");
 
+  const chart = useMemo(
+    () => (result && prefs.chords ? buildChordChart(result) : null),
+    [result, prefs.chords]
+  );
+
   const downloadAsciiTab = useCallback(() => {
     if (!tabLayout) return;
     const text = renderAsciiTab(tabLayout, state.fileName ?? "Transcription");
     download(text, "text/plain", `${baseName}-tab.txt`);
   }, [tabLayout, state.fileName, baseName, download]);
+
+  const downloadChart = useCallback(() => {
+    if (!result || !chart) return;
+    const text = renderChartText(result, chart, state.fileName ?? "Chord chart");
+    download(text, "text/plain", `${baseName}-chords.txt`);
+  }, [result, chart, state.fileName, baseName, download]);
 
   const downloadMidi = useCallback(() => {
     if (!result) return;
@@ -223,9 +236,37 @@ export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppP
               <OutputToggles prefs={prefs} onToggle={toggle} compact />
             </div>
             <div className="flex gap-2">
+              {prefs.chords && (
+                <button
+                  onClick={downloadChart}
+                  className="flex items-center gap-1.5 rounded-lg bg-indigo-500/15 px-3 py-1.5 text-sm font-medium text-indigo-300 transition-all hover:-translate-y-0.5 hover:bg-indigo-500/25"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M12 3v13" />
+                    <path d="m7 12 5 5 5-5" />
+                    <path d="M5 21h14" />
+                  </svg>
+                  Chord chart
+                </button>
+              )}
               {prefs.midi && (
                 <button
                   onClick={downloadMidi}
+                  title={
+                    result.arrangement.mode === "dense"
+                      ? "Chords track only — the mix is too dense for a reliable melody track"
+                      : "Chords + transcribed melody tracks"
+                  }
                   className="flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-3 py-1.5 text-sm font-medium text-emerald-300 transition-all hover:-translate-y-0.5 hover:bg-emerald-500/25"
                 >
                   <svg
@@ -243,7 +284,7 @@ export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppP
                     <path d="m7 12 5 5 5-5" />
                     <path d="M5 21h14" />
                   </svg>
-                  Download MIDI
+                  MIDI
                 </button>
               )}
               <button
@@ -315,6 +356,11 @@ export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppP
                 onSeek={seek}
                 keyEstimate={result.key}
               />
+              {chart && chart.measures.length > 0 && (
+                <div className="mt-3">
+                  <ChordChart chart={chart} currentTime={currentTime} onSeek={seek} />
+                </div>
+              )}
             </section>
           )}
 

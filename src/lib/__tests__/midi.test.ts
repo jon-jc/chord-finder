@@ -3,7 +3,14 @@ import { buildMidiFile } from "../midi/writer";
 import { romanNumeral } from "../theory/roman";
 import { CHORDS, chordName } from "../theory/chords";
 import { analyzeAudio } from "../analysis/analyze";
-import { chordMidiNotes, concat, renderNotes, TEST_SAMPLE_RATE } from "./synth";
+import {
+  addNoise,
+  chordMidiNotes,
+  concat,
+  noiseSource,
+  renderNotes,
+  TEST_SAMPLE_RATE,
+} from "./synth";
 
 /** Minimal SMF reader: header fields plus note-on counts per track. */
 function parseMidi(bytes: Uint8Array) {
@@ -77,8 +84,42 @@ describe("buildMidiFile", () => {
     expect(noteTrack.midis.has(48)).toBe(true); // C3
 
     const chordTrack = parsed.tracks[2];
-    expect(chordTrack.noteOns).toBeGreaterThanOrEqual(8); // triad+bass x 2
+    expect(chordTrack.noteOns).toBeGreaterThanOrEqual(8); // voicing+bass x 2
     expect(chordTrack.noteOns).toBe(chordTrack.noteOffs);
+
+    // Chords play as guitar voicings: open C = x32010 -> C3 E3 G3 C4 E4,
+    // plus the C2 bass an octave below.
+    for (const midi of [48, 52, 55, 60, 64, 36]) {
+      expect(chordTrack.midis.has(midi)).toBe(true);
+    }
+  });
+
+  it("omits the melody track for dense mixes (mixture is not a part)", () => {
+    const clean = concat([
+      renderNotes(chordMidiNotes(4, [0, 4, 7]), 2),
+      renderNotes(chordMidiNotes(9, [0, 3, 7]), 2),
+      renderNotes(chordMidiNotes(2, [0, 4, 7]), 2),
+      renderNotes(chordMidiNotes(4, [0, 4, 7]), 2),
+    ]);
+    const mix = addNoise(clean, 0.012, 7);
+    const burst = noiseSource(11);
+    const burstLen = Math.floor(0.06 * TEST_SAMPLE_RATE);
+    for (let t = 0; t < mix.length; t += Math.floor(0.5 * TEST_SAMPLE_RATE)) {
+      for (let i = 0; i < burstLen && t + i < mix.length; i++) {
+        const env = Math.exp((-30 * i) / TEST_SAMPLE_RATE);
+        mix[t + i] += burst() * 0.25 * env;
+      }
+    }
+
+    const result = analyzeAudio(mix, TEST_SAMPLE_RATE);
+    expect(result.arrangement.mode).toBe("dense");
+
+    const auto = parseMidi(buildMidiFile(result));
+    expect(auto.trackCount).toBe(2); // meta + chords only
+    expect(auto.tracks[1].noteOns).toBeGreaterThan(0);
+
+    const forced = parseMidi(buildMidiFile(result, { includeNotes: true }));
+    expect(forced.trackCount).toBe(3);
   });
 
   it("handles long delta times via variable-length quantities", () => {
