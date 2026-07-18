@@ -11,6 +11,11 @@ export interface EstimatedPitch {
   midi: number;
   /** Relative strength within the segment, 0..1. */
   strength: number;
+  /**
+   * Raw (un-normalized) harmonic salience. Comparable across segments of
+   * the same recording; used to tell re-attacks from ring-over.
+   */
+  salience: number;
 }
 
 export interface PitchOptions {
@@ -89,23 +94,23 @@ export function estimatePitches(
   const binHz = sampleRate / size;
 
   if (segment.length >= size + size / 2) {
-    // Second window from the sustain portion, blended 60/40.
+    // Second window from the sustain portion, blended 60/40 in raw
+    // magnitude (same window size, so the scales match). Attack transients
+    // are incoherent between the windows and wash out; true partials
+    // reinforce.
     const offset = Math.min(segment.length - size, Math.floor(size / 2));
     applyHann(segment.subarray(offset, offset + size), windowed);
     const sustain = magnitudeSpectrum(windowed);
-    let maxAttack = 0;
-    let maxSustain = 0;
     for (let i = 0; i < spectrum.length; i++) {
-      if (spectrum[i] > maxAttack) maxAttack = spectrum[i];
-      if (sustain[i] > maxSustain) maxSustain = sustain[i];
-    }
-    if (maxAttack > 0 && maxSustain > 0) {
-      for (let i = 0; i < spectrum.length; i++) {
-        spectrum[i] =
-          (0.6 * spectrum[i]) / maxAttack + (0.4 * sustain[i]) / maxSustain;
-      }
+      spectrum[i] = 0.6 * spectrum[i] + 0.4 * sustain[i];
     }
   }
+
+  // Magnitudes scale with window size; normalize so saliences are
+  // comparable across segments of different lengths (ring-over tracking
+  // depends on this).
+  const sizeScale = 8192 / size;
+  for (let i = 0; i < spectrum.length; i++) spectrum[i] *= sizeScale;
 
   let maxMag = 0;
   for (let i = 0; i < spectrum.length; i++) {
@@ -163,7 +168,7 @@ export function estimatePitches(
       break;
     }
 
-    results.push({ midi: bestMidi, strength: bestSalience });
+    results.push({ midi: bestMidi, strength: bestSalience, salience: bestSalience });
 
     // Subtract this note's harmonics so weaker notes can surface.
     const f0 = midiToFreq(bestMidi, opts.tuningCents);
@@ -179,8 +184,17 @@ export function estimatePitches(
     }
   }
 
-  const peak = results.reduce((m, r) => Math.max(m, r.strength), 0) || 1;
-  return results
-    .map((r) => ({ midi: r.midi, strength: r.strength / peak }))
+  // Sub-octave ghost filter: a pitch one octave below a much stronger
+  // detection is usually assembled from that note's own partials (every
+  // even harmonic coincides). Real octave doublings ring comparably loud
+  // on the lower string and survive.
+  const filtered = results.filter((r) => {
+    const upper = results.find((r2) => r2.midi === r.midi + 12);
+    return !upper || r.salience >= 0.4 * upper.salience;
+  });
+
+  const peak = filtered.reduce((m, r) => Math.max(m, r.strength), 0) || 1;
+  return filtered
+    .map((r) => ({ midi: r.midi, strength: r.strength / peak, salience: r.salience }))
     .sort((a, b) => a.midi - b.midi);
 }

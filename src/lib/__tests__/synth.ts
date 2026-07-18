@@ -22,7 +22,8 @@ export function renderNotes(
       const freq = f0 * h;
       if (freq > sampleRate / 2) break;
       const amp = 0.3 / (midiNotes.length * h);
-      const phase = Math.random() * 2 * Math.PI;
+      // Deterministic pseudo-random phase so tests are reproducible.
+      const phase = ((midi * 7919 + h * 104729) % 628) / 100;
       for (let i = 0; i < length; i++) {
         // Gentle exponential decay for realism.
         const env = Math.exp((-1.5 * i) / sampleRate);
