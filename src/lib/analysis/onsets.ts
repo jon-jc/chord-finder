@@ -82,7 +82,7 @@ export function detectOnsets(
   const onsets: number[] = [];
   const meanWindow = 8;
   const minGapFrames = Math.round(0.1 / hopSeconds);
-  const significance = maxFlux * 0.12;
+  const significance = maxFlux * 0.08;
   let lastOnsetFrame = -minGapFrames;
 
   for (let f = 1; f < frameCount - 1; f++) {
@@ -92,7 +92,7 @@ export function detectOnsets(
     for (let i = start; i < end; i++) mean += flux[i];
     mean /= end - start;
 
-    const threshold = Math.max(mean * 1.4 + 0.05, significance);
+    const threshold = Math.max(mean * 1.25 + 0.03, significance);
     const isPeak =
       flux[f] > threshold && flux[f] >= flux[f - 1] && flux[f] > flux[f + 1];
     if (isPeak && f - lastOnsetFrame >= minGapFrames) {
