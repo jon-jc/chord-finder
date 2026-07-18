@@ -82,7 +82,7 @@ export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppP
 
   const tabLayout = useMemo(() => {
     if (!result || !prefs.tabs) return null;
-    const columns = mapToFretboard(result.transcription.notes);
+    const columns = mapToFretboard(result.transcription.notes, result.chords);
     if (columns.length === 0) return null;
     return layoutTab(
       columns,

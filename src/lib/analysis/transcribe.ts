@@ -3,6 +3,7 @@
  * -> timed note events suitable for tabs and MIDI.
  */
 
+import { CHORDS } from "../theory/chords";
 import { detectOnsets } from "./onsets";
 import { estimatePitches } from "./pitches";
 
@@ -14,6 +15,13 @@ export interface NoteEvent {
   velocity: number;
 }
 
+/** Minimal view of a chord segment used as a transcription prior. */
+export interface ChordSpan {
+  chordId: number;
+  startTime: number;
+  endTime: number;
+}
+
 export interface Transcription {
   notes: NoteEvent[];
   onsets: number[];
@@ -23,7 +31,18 @@ export interface Transcription {
 export interface TranscribeOptions {
   tuningCents?: number;
   maxPolyphony?: number;
+  /** Detected chords; used as a harmonic prior for pitch estimation. */
+  chords?: ChordSpan[];
   onProgress?: (fraction: number) => void;
+}
+
+/** Pitch classes (root + chord tones) of the chord sounding at `time`. */
+function chordPcsAt(chords: ChordSpan[], time: number): number[] {
+  const span = chords.find((c) => time >= c.startTime && time < c.endTime);
+  if (!span) return [];
+  const chord = CHORDS[span.chordId];
+  if (!chord || chord.root < 0 || !chord.quality) return [];
+  return chord.quality.intervals.map((iv) => (chord.root + iv) % 12);
 }
 
 const MIN_SEGMENT_SECONDS = 0.08;
@@ -34,7 +53,7 @@ export function transcribeNotes(
   sampleRate: number,
   options: TranscribeOptions = {}
 ): Transcription {
-  const { tuningCents = 0, maxPolyphony = 6, onProgress } = options;
+  const { tuningCents = 0, maxPolyphony = 6, chords = [], onProgress } = options;
 
   const { onsets, tempoBpm } = detectOnsets(signal, sampleRate);
   onProgress?.(0.25);
@@ -64,6 +83,7 @@ export function transcribeNotes(
     const pitches = estimatePitches(segment, sampleRate, {
       tuningCents,
       maxPolyphony,
+      preferredPcs: chordPcsAt(chords, (start + end) / 2),
     });
     for (const pitch of pitches) {
       notes.push({
