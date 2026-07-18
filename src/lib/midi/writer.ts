@@ -1,14 +1,20 @@
 /**
  * Standard MIDI File (format 1) writer — no dependencies.
  *
- * Produces three tracks:
+ * Tracks:
  *   0: meta (tempo, time signature, key signature)
- *   1: transcribed notes (steel-string guitar)
- *   2: block chords from the chord analysis (piano)
+ *   1: transcribed notes (only for clean solo recordings — mixture
+ *      transcription of a dense mix would just be noise)
+ *   2: chords, voiced like a guitarist plays them (voicing dictionary),
+ *      with the sounding bass note and starts/ends quantized to the beat
+ *      grid estimated from the onsets
  */
 
 import type { AnalysisResult } from "../analysis/types";
-import { CHORDS } from "../theory/chords";
+import { estimateBeatGrid, snapToGrid } from "../analysis/beats";
+import { CHORDS, NO_CHORD_ID } from "../theory/chords";
+import { STANDARD_TUNING } from "../tabs/fretboard";
+import { shapesForChord } from "../tabs/shapes";
 
 const PPQ = 480;
 
@@ -63,10 +69,30 @@ function keySignatureSf(tonic: number, mode: "major" | "minor"): number {
   return sf;
 }
 
+/** MIDI pitches for a chord: guitar voicing when known, stacked triad otherwise. */
+function chordVoicing(chordId: number): number[] {
+  const shape = shapesForChord(chordId)[0];
+  if (shape) {
+    const midis: number[] = [];
+    for (let s = 0; s < 6; s++) {
+      if (shape[s] >= 0) midis.push(STANDARD_TUNING[s] + shape[s]);
+    }
+    return midis;
+  }
+  const chord = CHORDS[chordId];
+  if (!chord.quality || chord.root < 0) return [];
+  const rootMidi = 48 + chord.root;
+  return chord.quality.intervals.map((iv) => rootMidi + iv);
+}
+
 export interface MidiOptions {
   /** Include the block-chord track. */
   includeChords?: boolean;
-  /** Include the transcribed note track. */
+  /**
+   * Include the transcribed note track. Defaults to true only for clean
+   * solo recordings; a dense mix's mixture transcription is not the part
+   * anyone played.
+   */
   includeNotes?: boolean;
   title?: string;
 }
@@ -75,10 +101,15 @@ export function buildMidiFile(
   result: AnalysisResult,
   options: MidiOptions = {}
 ): Uint8Array {
-  const { includeChords = true, includeNotes = true, title = "ChordLab export" } = options;
+  const {
+    includeChords = true,
+    includeNotes = result.arrangement.mode === "solo",
+    title = "ChordLab export",
+  } = options;
 
   const bpm = result.transcription.tempoBpm > 0 ? result.transcription.tempoBpm : 100;
   const secondsToTicks = (s: number) => (s * bpm * PPQ) / 60;
+  const grid = estimateBeatGrid(result.transcription.onsets, bpm);
 
   // --- Track 0: meta ---
   const meta = new TrackBuilder();
@@ -115,29 +146,38 @@ export function buildMidiFile(
     tracks.push(track.finish());
   }
 
-  // --- Track 2: block chords ---
+  // --- Track 2: chords (guitar voicings, beat-quantized) ---
   if (includeChords) {
     const track = new TrackBuilder();
     track.event(0, textEvent(0x03, "Chords"));
-    track.event(0, [0xc1, 0]); // program: acoustic grand piano, channel 1
+    track.event(0, [0xc1, 25]); // program: steel-string guitar, channel 1
 
     const events: { tick: number; data: number[]; order: number }[] = [];
     for (const segment of result.chords) {
+      if (segment.chordId === NO_CHORD_ID) continue;
       const chord = CHORDS[segment.chordId];
       if (!chord.quality || chord.root < 0) continue;
+
+      // Quantize chord boundaries to the half-beat grid; a chord change
+      // that the analysis places 60ms off the beat was on the beat.
+      const startSeconds = snapToGrid(segment.startTime, grid);
+      const endSeconds = Math.max(
+        startSeconds + grid.beatSeconds / 2,
+        snapToGrid(segment.endTime, grid)
+      );
+
       const velocity = Math.max(30, Math.min(100, Math.round(segment.confidence * 100)));
-      const startTick = secondsToTicks(segment.startTime);
+      const startTick = secondsToTicks(startSeconds);
       const endTick = Math.max(
         startTick + PPQ / 4,
-        secondsToTicks(segment.endTime) - PPQ / 16
+        secondsToTicks(endSeconds) - PPQ / 16
       );
-      const rootMidi = 48 + chord.root; // C3-based voicing
-      for (const interval of chord.quality.intervals) {
-        const midi = rootMidi + interval;
+
+      for (const midi of chordVoicing(segment.chordId)) {
         events.push({ tick: startTick, data: [0x91, midi, velocity], order: 1 });
         events.push({ tick: endTick, data: [0x81, midi, 0], order: 0 });
       }
-      // Bass note an octave below: the sounding bass (inversions) or root.
+      // Sounding bass note (inversions honored) an octave below.
       const bassPc = segment.bassPc ?? chord.root;
       const bassMidi = 36 + bassPc; // C2..B2
       events.push({ tick: startTick, data: [0x91, bassMidi, velocity], order: 1 });

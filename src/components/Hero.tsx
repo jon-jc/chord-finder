@@ -116,8 +116,9 @@ export function Hero({ onStart, onDemo }: HeroProps) {
             style={{ animationDelay: "160ms" }}
           >
             Drop in any song — or just play — and a custom DSP engine maps out
-            the chords, finds the key, writes the guitar tab, and hands you a
-            MIDI file. Pick exactly the outputs you want.
+            every chord, spots the song&apos;s main progression, finds the key,
+            and hands you a beat-aligned MIDI file. Guitar tabs included when
+            you want them.
           </p>
 
           <div

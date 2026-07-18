@@ -13,7 +13,7 @@ export interface OutputPrefs {
   midi: boolean;
 }
 
-export const DEFAULT_PREFS: OutputPrefs = { chords: true, tabs: true, midi: true };
+export const DEFAULT_PREFS: OutputPrefs = { chords: true, tabs: false, midi: true };
 const STORAGE_KEY = "chordlab-outputs";
 
 // localStorage-backed external store (SSR-safe, syncs across tabs).
@@ -77,22 +77,22 @@ const OPTIONS: {
   {
     key: "chords",
     label: "Chord chart",
-    hint: "progression + Roman numerals",
+    hint: "bars, loop, Roman numerals",
     icon: (
       <path d="M9 18V5l12-2v13M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm12-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
     ),
   },
   {
-    key: "tabs",
-    label: "Guitar tabs",
-    hint: "playable fingerings",
-    icon: <path d="M3 7h18M3 10.5h18M3 14h18M3 17.5h18M8 5v15M16 4v15" />,
-  },
-  {
     key: "midi",
     label: "MIDI file",
-    hint: "notes + chords tracks",
+    hint: "beat-aligned chord track",
     icon: <path d="M12 3v13m0 0-5-5m5 5 5-5M5 21h14" />,
+  },
+  {
+    key: "tabs",
+    label: "Guitar tabs",
+    hint: "optional extra",
+    icon: <path d="M3 7h18M3 10.5h18M3 14h18M3 17.5h18M8 5v15M16 4v15" />,
   },
 ];
 
