@@ -52,11 +52,25 @@ export function chordMidiNotes(rootPc: number, intervals: number[]): number[] {
   return intervals.map((iv) => rootMidi + iv);
 }
 
+/** Deterministic pseudo-random stream (LCG) for reproducible noise. */
+export function noiseSource(seed = 1): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return (state / 0xffffffff) * 2 - 1;
+  };
+}
+
 /** Add white noise to a signal at the given linear amplitude. */
-export function addNoise(signal: Float32Array, amplitude: number): Float32Array {
+export function addNoise(
+  signal: Float32Array,
+  amplitude: number,
+  seed = 1
+): Float32Array {
+  const random = noiseSource(seed);
   const out = new Float32Array(signal.length);
   for (let i = 0; i < signal.length; i++) {
-    out[i] = signal[i] + (Math.random() * 2 - 1) * amplitude;
+    out[i] = signal[i] + random() * amplitude;
   }
   return out;
 }

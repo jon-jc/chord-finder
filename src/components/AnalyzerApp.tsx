@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAnalyzer } from "../hooks/useAnalyzer";
 import { layoutTab } from "../lib/tabs/layout";
 import { mapToFretboard } from "../lib/tabs/fretboard";
+import { buildRhythmColumns } from "../lib/tabs/rhythm";
 import { renderAsciiTab } from "../lib/tabs/ascii";
 import { buildMidiFile } from "../lib/midi/writer";
 import { FileDrop } from "./FileDrop";
@@ -29,12 +30,22 @@ interface AnalyzerAppProps {
   externalFile?: { file: File; nonce: number } | null;
 }
 
+type TabStyle = "auto" | "notes" | "chords";
+
 export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppProps) {
   const { state, analyze, reset } = useAnalyzer();
   const { prefs, toggle } = useOutputPrefs();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [tabStyle, setTabStyle] = useState<TabStyle>("auto");
+
+  // Each new file starts back on auto style (adjust-during-render).
+  const [seenAudioUrl, setSeenAudioUrl] = useState(state.audioUrl);
+  if (state.audioUrl !== seenAudioUrl) {
+    setSeenAudioUrl(state.audioUrl);
+    setTabStyle("auto");
+  }
 
   const loadDemo = useCallback(async () => {
     const response = await fetch("demo.wav"); // relative: works under a base path
@@ -80,9 +91,23 @@ export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppP
   const { result } = state;
   const segments = result?.chords ?? [];
 
+  // Auto style: note-for-note for clean solo recordings, chord voicings
+  // for dense mixes (where mixture transcription cannot match the part).
+  const effectiveStyle: Exclude<TabStyle, "auto"> = useMemo(() => {
+    if (tabStyle !== "auto") return tabStyle;
+    return result?.arrangement.mode === "dense" ? "chords" : "notes";
+  }, [tabStyle, result]);
+
   const tabLayout = useMemo(() => {
     if (!result || !prefs.tabs) return null;
-    const columns = mapToFretboard(result.transcription.notes, result.chords);
+    const columns =
+      effectiveStyle === "chords"
+        ? buildRhythmColumns(
+            result.chords,
+            result.transcription.onsets,
+            result.transcription.tempoBpm
+          )
+        : mapToFretboard(result.transcription.notes, result.chords);
     if (columns.length === 0) return null;
     return layoutTab(
       columns,
@@ -90,7 +115,7 @@ export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppP
       result.transcription.tempoBpm,
       result.duration
     );
-  }, [result, prefs.tabs]);
+  }, [result, prefs.tabs, effectiveStyle]);
 
   const download = useCallback((data: BlobPart, mime: string, name: string) => {
     const blob = new Blob([data], { type: mime });
@@ -300,15 +325,59 @@ export function AnalyzerApp({ demoNonce = 0, externalFile = null }: AnalyzerAppP
                   Guitar tab{" "}
                   <span className="normal-case tracking-normal text-slate-600">
                     · ~{Math.round(tabLayout.tempoBpm)} BPM ·{" "}
-                    {result.transcription.notes.length} notes · standard tuning
+                    {effectiveStyle === "chords"
+                      ? "chord voicings"
+                      : `${result.transcription.notes.length} notes`}{" "}
+                    · standard tuning
                   </span>
                 </h3>
-                <button
-                  onClick={downloadAsciiTab}
-                  className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5"
-                >
-                  Download .txt tab
-                </button>
+                <div className="flex items-center gap-2">
+                  <div
+                    role="group"
+                    aria-label="Tab style"
+                    className="flex rounded-lg border border-white/10 p-0.5 text-xs"
+                  >
+                    {(
+                      [
+                        ["chords", "Chord voicings"],
+                        ["notes", "Note-for-note"],
+                      ] as const
+                    ).map(([style, label]) => (
+                      <button
+                        key={style}
+                        aria-pressed={effectiveStyle === style}
+                        onClick={() => setTabStyle(style)}
+                        title={
+                          tabStyle === "auto"
+                            ? `Auto-selected ${
+                                effectiveStyle === "chords"
+                                  ? "chord voicings (dense mix detected)"
+                                  : "note-for-note (clean recording detected)"
+                              }`
+                            : undefined
+                        }
+                        className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                          effectiveStyle === style
+                            ? "bg-indigo-500/25 text-indigo-200"
+                            : "text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {tabStyle === "auto" && (
+                    <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500">
+                      auto
+                    </span>
+                  )}
+                  <button
+                    onClick={downloadAsciiTab}
+                    className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5"
+                  >
+                    Download .txt tab
+                  </button>
+                </div>
               </div>
               <TabSheet
                 layout={tabLayout}

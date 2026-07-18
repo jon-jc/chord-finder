@@ -1,4 +1,5 @@
 import type { KeyEstimate, KeySpan } from "../theory/key";
+import type { Arrangement } from "./arrangement";
 import type { Transcription } from "./transcribe";
 
 export interface ChordSegment {
@@ -18,6 +19,8 @@ export interface AnalysisResult {
   key: KeyEstimate;
   /** Local keys over time; more than one entry means the piece modulates. */
   keyTimeline: KeySpan[];
+  /** Solo recording vs dense mix — decides the default tab style. */
+  arrangement: Arrangement;
   chords: ChordSegment[];
   transcription: Transcription;
   /** Downsampled chromagram for visualization: frames x 12. */
